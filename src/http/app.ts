@@ -7,7 +7,7 @@ import type { RoomManager } from "../rooms/roomManager.js";
 import { roomsRouter } from "./routes/rooms.js";
 import { testRouter } from "./routes/test.js";
 
-export function createApp(opts: { manager: RoomManager; frontOrigin: string; trustProxy?: boolean; game?: GameManager }): Express {
+export function createApp(opts: { manager: RoomManager; frontOrigin: string | string[]; trustProxy?: boolean; game?: GameManager }): Express {
   const app = express();
   app.disable("x-powered-by");
   if (opts.trustProxy) app.set("trust proxy", 1);

@@ -24,9 +24,9 @@ async function main() {
 
   const manager = new RoomManager({ repo, timings: env.timings });
   const game = new GameManager({ manager, timings: env.timings, testMode: process.env.NODE_ENV === "test" });
-  const app = createApp({ manager, frontOrigin: env.frontOrigin, trustProxy: env.trustProxy, game });
+  const app = createApp({ manager, frontOrigin: env.frontOrigins, trustProxy: env.trustProxy, game });
   const server = http.createServer(app);
-  const io = new Server(server, { cors: { origin: env.frontOrigin } });
+  const io = new Server(server, { cors: { origin: env.frontOrigins } });
   const bots = new BotManager(manager);
   registerRoomHandlers(io, manager, game, bots);
 

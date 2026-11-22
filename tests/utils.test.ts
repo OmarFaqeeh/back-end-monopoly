@@ -51,6 +51,13 @@ describe("env", () => {
     expect(env.timings.emptyTimeoutMs).toBe(120_000);
     expect(loadEnv({ ...good, ROOM_EMPTY_TIMEOUT_MS: "5000" }).timings.emptyTimeoutMs).toBe(5000);
   });
+  it("allows several front-end origins and always the deployed site; FRONT_ORIGIN is optional", () => {
+    const env = loadEnv({ ...good, FRONT_ORIGIN: "http://localhost:3000, https://my.site/" });
+    expect(env.frontOrigins).toEqual(["http://localhost:3000", "https://my.site", "https://dealrush-kappa.vercel.app"]);
+    const rest = { SUPABASE_URL: good.SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY: good.SUPABASE_SERVICE_ROLE_KEY };
+    expect(loadEnv(rest).frontOrigins).toContain("https://dealrush-kappa.vercel.app");
+    expect(() => loadEnv({ ...good, FRONT_ORIGIN: "not a url" })).toThrow(/FRONT_ORIGIN/);
+  });
   it("fails fast with a clear message", () => {
     expect(() => loadEnv({})).toThrow(EnvError);
     expect(() => loadEnv({ ...good, SUPABASE_URL: "nope" })).toThrow(/SUPABASE_URL/);

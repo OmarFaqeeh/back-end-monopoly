@@ -94,3 +94,14 @@ describe("security", () => {
     expect(res.body).toEqual({ error: "VALIDATION_ERROR" });
   });
 });
+
+describe("CORS", () => {
+  it("answers the preflight for every allowed origin (list) and refuses others", async () => {
+    manager = new RoomManager({ repo: new InMemoryRoomRepository(), logger: { error: () => {} } });
+    const app = createApp({ manager, frontOrigin: ["http://localhost:3000", "https://dealrush-kappa.vercel.app"] });
+    const ok = await request(app).options("/api/rooms").set("Origin", "https://dealrush-kappa.vercel.app").set("Access-Control-Request-Method", "POST");
+    expect(ok.headers["access-control-allow-origin"]).toBe("https://dealrush-kappa.vercel.app");
+    const bad = await request(app).options("/api/rooms").set("Origin", "https://evil.example").set("Access-Control-Request-Method", "POST");
+    expect(bad.headers["access-control-allow-origin"]).toBeUndefined();
+  });
+});
