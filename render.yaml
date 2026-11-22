@@ -1,0 +1,21 @@
+# Render Blueprint: runs the real-time game server (Express + Socket.IO) as one always-on web service.
+# Rooms live in this process's memory, so keep a single instance.
+services:
+  - type: web
+    name: deal-rush-back
+    runtime: node
+    plan: free
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.12.0
+      - key: TRUST_PROXY
+        value: "1"
+      - key: FRONT_ORIGIN
+        value: https://dealrush-kappa.vercel.app
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
