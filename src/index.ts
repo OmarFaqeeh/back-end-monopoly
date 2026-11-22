@@ -5,7 +5,7 @@
 import "dotenv/config";
 import cors from "cors";
 import express from "express";
-import { DEPLOYED_ORIGINS, loadEnv } from "./config/env.js";
+import { DEPLOYED_ORIGINS, EnvError, loadEnv } from "./config/env.js";
 import { createApp } from "./http/app.js";
 import { GameManager } from "./game/gameManager.js";
 import { RoomManager } from "./rooms/roomManager.js";
@@ -23,9 +23,10 @@ function build(): express.Express {
     app.use(createApp({ manager, frontOrigin: env.frontOrigins, trustProxy: true, game }));
   } catch (e) {
     // A missing setting must show up as a readable answer (with CORS headers), not as a crashed function.
+    const detail = e instanceof EnvError ? e.message : "startup failed";
     console.error(e instanceof Error ? e.message : e);
     app.use(cors({ origin: DEPLOYED_ORIGINS }));
-    app.use((_req, res) => void res.status(500).json({ error: "SERVER_MISCONFIGURED" }));
+    app.use((_req, res) => void res.status(500).json({ error: "SERVER_MISCONFIGURED", detail }));
   }
   return app;
 }
