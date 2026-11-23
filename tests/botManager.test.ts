@@ -210,22 +210,34 @@ describe("settings", () => {
     expect(botsOf(r.code)).toHaveLength(3);
   });
 
-  it("raising maxPlayers while ON refills the new seats one bot every 5 s; it cannot go below the seated count", async () => {
+  it("changing maxPlayers while ON fills the new seats at once and a lower number removes surplus bots (newest first); humans are never removed", async () => {
     const r = await room(1, 2);
     await allowBots(r);
     expect(seat(r.code).seated).toBe(2);
     await manager.updateSettings(r.code, r.host, { maxPlayers: 4 });
     await flush();
-    expect(seat(r.code).seated).toBe(2); // not instantly
-    await vi.advanceTimersByTimeAsync(5_001);
-    expect(seat(r.code).seated).toBe(3);
-    await vi.advanceTimersByTimeAsync(5_000);
-    expect(seat(r.code).seated).toBe(4);
-    await expect(manager.updateSettings(r.code, r.host, { maxPlayers: 3 })).rejects.toMatchObject({ code: "MAX_PLAYERS_TOO_LOW" });
-    bots.removeByHost(r.code, r.host, botsOf(r.code)[0]!.id);
-    await manager.updateSettings(r.code, r.host, { maxPlayers: 3 }); // fine once the host removed a bot first
+    expect(seat(r.code).seated).toBe(4); // filled in the same moment
+    await manager.updateSettings(r.code, r.host, { maxPlayers: 3 });
+    expect(seat(r.code)).toMatchObject({ seated: 3, humans: 1, bots: 2 });
+    await manager.updateSettings(r.code, r.host, { maxPlayers: 2 });
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(seat(r.code).seated).toBe(3);
+    expect(seat(r.code)).toMatchObject({ seated: 2, humans: 1, bots: 1 });
+    // two humans and a bot: the table cannot go below the humans
+    await manager.updateSettings(r.code, r.host, { maxPlayers: 3 });
+    await manager.join({ code: r.code, nickname: "Sara", socketId: "s-9" });
+    await expect(manager.updateSettings(r.code, r.host, { maxPlayers: 2 })).resolves.toBeDefined(); // the bot makes room
+    expect(seat(r.code)).toMatchObject({ seated: 2, humans: 2, bots: 0 });
+  });
+
+  it.each([2, 3, 4, 5, 6, 7, 8])("max %i: bots ON fills every empty seat, and every other size works afterwards", async (max) => {
+    const r = await room(1, max);
+    await allowBots(r);
+    expect(seat(r.code)).toMatchObject({ seated: max, humans: 1, bots: max - 1 });
+    for (const next of [2, 8, 3, 6, 2, max]) {
+      await manager.updateSettings(r.code, r.host, { maxPlayers: next });
+      await flush();
+      expect(seat(r.code)).toMatchObject({ seated: next, humans: 1, bots: next - 1 });
+    }
   });
 });
 

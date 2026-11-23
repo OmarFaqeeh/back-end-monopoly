@@ -423,10 +423,19 @@ export class RoomManager {
     if (room.status === "playing") throw new RoomError("NOT_ALLOWED_IN_GAME");
     const patch = settingsPatchSchema.safeParse(patchRaw);
     if (!patch.success) throw new RoomError("INVALID_SETTINGS");
-    if (patch.data.maxPlayers !== undefined && patch.data.maxPlayers < room.players.size) throw new RoomError("MAX_PLAYERS_TOO_LOW");
+    if (patch.data.maxPlayers !== undefined && patch.data.maxPlayers < room.players.size) {
+      // Lowering the table: surplus bots leave (newest first); humans are never removed, so they must still fit.
+      const humans = [...room.players.values()].filter((p) => !p.isBot).length;
+      if (humans > patch.data.maxPlayers) throw new RoomError("MAX_PLAYERS_TOO_LOW");
+    }
     const merged = roomSettingsSchema.safeParse({ ...room.settings, ...patch.data });
     if (!merged.success) throw new RoomError("INVALID_SETTINGS");
     room.settings = merged.data;
+    const surplus = room.players.size - room.settings.maxPlayers;
+    if (surplus > 0) {
+      const bots = [...room.players.values()].filter((p) => p.isBot).sort((a, b) => b.joinedAt - a.joinedAt || b.seq - a.seq);
+      for (const bot of bots.slice(0, surplus)) this.dropBot(room, bot, "botMadeRoom", false);
+    }
     await this.persist("settings", () => this.repo.updateRoom(room.id, { settings: room.settings }));
     const snapshot = this.snapshot(room);
     this.events.state(snapshot);

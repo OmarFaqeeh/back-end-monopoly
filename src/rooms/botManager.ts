@@ -2,7 +2,7 @@
 //  - Allow bots turned ON: bots fill ALL empty seats at once (maxPlayers - seated).
 //  - the host removes a bot with X: if the seat is still empty after 10 s a new bot fills it, then one bot every 5 s
 //    for any other seat that is still empty (a human taking a seat cancels that seat's refill).
-//  - turning Allow bots OFF removes every bot and stops refills; a higher maxPlayers is refilled one bot per 5 s.
+//  - turning Allow bots OFF removes every bot and stops refills; changing maxPlayers fills the new seats at once (a lower one removes the surplus bots, newest first).
 // All timers are cleared when the room closes or the game starts; reconcile() is idempotent.
 import { BOT_NAMES } from "../config/botNames.js";
 import { BOT_REFILL_AFTER_REMOVE_MS, BOT_REFILL_INTERVAL_MS, PERSONALITY_IDS } from "../config/botPersonalities.js";
@@ -13,6 +13,8 @@ import type { RoomManager } from "./roomManager.js";
 interface RoomBots {
   /** Allow bots was ON at the last reconcile (so turning it ON fills everything at once, only once). */
   on: boolean;
+  /** The table size at the last reconcile: a change fills (or empties) the seats at once. */
+  max: number | null;
   filling: boolean;
   timer: ReturnType<typeof setTimeout> | null;
 }
@@ -51,7 +53,7 @@ export class BotManager {
   private state(code: string): RoomBots {
     let st = this.rooms.get(code);
     if (!st) {
-      st = { on: false, filling: false, timer: null };
+      st = { on: false, max: null, filling: false, timer: null };
       this.rooms.set(code, st);
     }
     return st;
@@ -83,9 +85,12 @@ export class BotManager {
       st.on = false;
       return;
     }
-    if (!st.on) {
-      // Just turned ON: every empty seat gets a bot in the same moment.
+    const maxChanged = st.max !== null && st.max !== info.max;
+    st.max = info.max;
+    if (!st.on || maxChanged) {
+      // Just turned ON, or the table size changed: every empty seat gets a bot in the same moment.
       st.on = true;
+      this.clearTimer(code);
       st.filling = true;
       try {
         for (let n = Math.max(0, info.max - info.seated); n > 0; n--) await this.addOne(code);

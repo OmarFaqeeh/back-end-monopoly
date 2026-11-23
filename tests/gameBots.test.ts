@@ -8,6 +8,8 @@ import { RoomManager } from "../src/rooms/roomManager.js";
 import { InMemoryRoomRepository } from "../src/services/roomRepository.js";
 import type { GameEvent } from "../src/shared/events.js";
 import { dice } from "./helpers/engine.js";
+import board from "../src/shared/board.json" with { type: "json" };
+const BOARD = board as { index: number; kind: string; price?: number }[];
 
 let manager: RoomManager;
 let bots: BotManager;
@@ -61,8 +63,9 @@ describe("1 human + 3 bots", () => {
     expect(g.snap().players).toHaveLength(4);
     // The human skips their roll-ups by being "AFK-free": roll when it is their turn, and let the bots play in between.
     for (let turn = 0; turn < 6; turn++) {
-      await g.untilHuman();
-      g.act({ type: "roll" });
+      await g.untilHuman(g.snap().phase === "awaitingJailChoice" ? "awaitingJailChoice" : "awaitingRoll");
+      if (g.snap().phase === "awaitingJailChoice") g.act({ type: "jailStay" });
+      else g.act({ type: "roll" });
       await vi.advanceTimersByTimeAsync(6_000);
       if (g.snap().phase === "awaitingDecision" && g.snap().currentPlayerId === g.human) g.act({ type: "skip" });
       if (g.snap().phase === "auction") await vi.advanceTimersByTimeAsync(20_000);
@@ -74,7 +77,11 @@ describe("1 human + 3 bots", () => {
   it("a bot takes part in an auction (the human skips a tile and the bots bid within their limits)", async () => {
     const g = await start({ auctions: true });
     await g.untilHuman();
-    game.setTestDice(g.code, [dice(6)]); // tile 6 (Patagonia, 90)
+    // roll onto a property nobody owns yet (the bots may have bought some before the human's first turn)
+    const here = g.snap().players.find((p) => p.id === g.human)!.position;
+    const total = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].find((n) => ["property"].includes(BOARD[(here + n) % 40]!.kind) && !g.snap().properties[(here + n) % 40])!;
+    game.setTestDice(g.code, [dice(total)]);
+    const price = BOARD[(here + total) % 40]!.price ?? 90;
     g.act({ type: "roll" });
     await vi.advanceTimersByTimeAsync(3_000);
     expect(g.snap().phase).toBe("awaitingDecision");
@@ -85,7 +92,7 @@ describe("1 human + 3 bots", () => {
     expect(events.some((e) => e.type === "AUCTION_ENDED")).toBe(true);
     for (const b of bids) {
       expect(g.botIds).toContain(b.playerId);
-      expect(b.amount).toBeLessThanOrEqual(Math.floor(1.6 * 90) + 10); // the highest personality ceiling is 1.6x
+      expect(b.amount).toBeLessThanOrEqual(Math.floor(1.6 * price) + 10); // the highest personality ceiling is 1.6x
     }
     expect(game.rejectedBotActions).toBe(0);
   }, 60_000);
