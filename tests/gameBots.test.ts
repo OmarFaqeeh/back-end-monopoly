@@ -20,7 +20,7 @@ beforeEach(() => {
   events.length = 0;
   manager = new RoomManager({ repo: new InMemoryRoomRepository(), logger: { error: () => {} } });
   bots = new BotManager(manager);
-  game = new GameManager({ manager, testMode: true, timings: { ...DEFAULT_TIMINGS, afkTimeoutMs: 600_000 }, logger: { error: () => {} } });
+  game = new GameManager({ manager, testMode: true, timings: { ...DEFAULT_TIMINGS, afkTimeoutMs: 600_000, turnIdleKickMs: 3_600_000 }, logger: { error: () => {} } });
   game.emitter = { started: () => {}, over: () => {}, events: (_c, p) => events.push(...p.events) };
 });
 afterEach(() => {

@@ -230,18 +230,15 @@ describe("settings", () => {
 });
 
 describe("the empty-room countdown and room cleanup", () => {
-  it("bots do not cancel the 2-minute countdown: with only the host and bots the room closes (EXPIRED_EMPTY)", async () => {
+  it("a bot counts as a player: once one sits at the table the 2-minute countdown is cancelled and the room stays open", async () => {
     const closed: string[] = [];
     manager.events = { ...manager.events, closed: (_c, reason) => void closed.push(reason) };
     const r = await room(1, 4);
     await allowBots(r);
     expect(botsOf(r.code)).toHaveLength(3);
-    await vi.advanceTimersByTimeAsync(119_000);
+    await vi.advanceTimersByTimeAsync(130_000);
+    expect(closed).toEqual([]);
     expect(manager.lookup(r.code)).not.toBeNull();
-    await vi.advanceTimersByTimeAsync(2_000);
-    expect(closed).toEqual(["EXPIRED_EMPTY"]);
-    expect(manager.lookup(r.code)).toBeNull();
-    expect(manager.getBots(r.code)).toEqual([]);
   });
 
   it("a human guest cancels the countdown; so does starting the game with bots", async () => {

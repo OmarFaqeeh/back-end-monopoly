@@ -12,6 +12,8 @@ export interface RoomTimings {
   afkTimeoutMs: number;
   /** Pause between two automatic AFK actions, so clients can follow. */
   afkStepMs: number;
+  /** A player whose turn is waiting for them is removed for inactivity after this long without any action. */
+  turnIdleKickMs: number;
 }
 
 export const ROOM_EMPTY_TIMEOUT_MS = 120_000;
@@ -24,6 +26,7 @@ export const DEFAULT_TIMINGS: RoomTimings = {
   zeroConnectedCloseMs: 60_000,
   afkTimeoutMs: AFK_TIMEOUT_MS,
   afkStepMs: 1_200,
+  turnIdleKickMs: 120_000,
 };
 
 export const JANITOR_INTERVAL_MS = 30_000;

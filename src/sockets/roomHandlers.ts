@@ -74,7 +74,7 @@ function reply(ack: unknown, response: unknown): void {
 
 export function registerRoomHandlers(io: Server, manager: RoomManager, game: GameManager = new GameManager({ manager }), bots?: BotManager): void {
   game.emitter = {
-    started: (code, snapshot) => void io.to(roomChannel(code)).emit(ServerEvents.gameStarted, { snapshot }),
+    started: (code, snapshot, turnTimer) => void io.to(roomChannel(code)).emit(ServerEvents.gameStarted, { snapshot, turnTimer: turnTimer ?? null }),
     events: (code, payload) => void io.to(roomChannel(code)).emit(ServerEvents.gameEvents, payload),
     over: (code, winnerPlayerId) => void io.to(roomChannel(code)).emit(ServerEvents.gameOver, { winnerPlayerId }),
   };
@@ -133,7 +133,7 @@ export function registerRoomHandlers(io: Server, manager: RoomManager, game: Gam
       reply(ack, response);
       // A player (re)joining a running game gets the full snapshot, without replaying old events.
       const running = game.getSnapshot(data.code);
-      if (running) socket.emit(ServerEvents.gameSync, { snapshot: running });
+      if (running) socket.emit(ServerEvents.gameSync, { snapshot: running, turnTimer: game.getTurnTimer(data.code) });
     });
 
     /** Registers a game action: needs a session, then the game manager applies it for this player. */

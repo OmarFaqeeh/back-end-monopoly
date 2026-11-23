@@ -12,7 +12,7 @@ import { createGame, toSnapshot } from "../engine/state.js";
 import type { Action, DiceSource, GameState } from "../engine/types.js";
 import type { RoomManager } from "../rooms/roomManager.js";
 import { rulesFromSettings } from "../shared/settings.js";
-import type { GameErrorCode, GameEvent, GameEventsPayload, GameSnapshot, TradeSide } from "../shared/events.js";
+import type { GameErrorCode, GameEvent, GameEventsPayload, GameSnapshot, TradeSide, TurnTimer } from "../shared/events.js";
 
 export class GameError extends Error {
   constructor(readonly code: GameErrorCode | "PLAYERS_NOT_READY" | "NOT_IN_ROOM" | "VALIDATION_ERROR") {
@@ -21,7 +21,7 @@ export class GameError extends Error {
 }
 
 export interface GameEmitter {
-  started(code: string, snapshot: GameSnapshot): void;
+  started(code: string, snapshot: GameSnapshot, turnTimer?: TurnTimer | null): void;
   events(code: string, payload: GameEventsPayload): void;
   over(code: string, winnerPlayerId: string): void;
 }
@@ -43,6 +43,9 @@ interface Runtime {
   /** When each currently disconnected player dropped (ms). */
   away: Map<string, number>;
   afkTimer: ReturnType<typeof setTimeout> | null;
+  /** The 2-minute idle timer of the player whose turn it is (humans only). */
+  idleTimer: ReturnType<typeof setTimeout> | null;
+  turnTimer: TurnTimer | null;
   /** Fires when the running auction's time is up (cleared and re-armed after every change). */
   auctionTimer: ReturnType<typeof setTimeout> | null;
   /** Computer players: personality and memory. They act through the same actions as humans. */
@@ -124,7 +127,7 @@ export class GameManager {
     for (const p of room.players) if (!p.connected) away.set(p.playerId, this.now());
     const bots = new Map<string, { personality: PersonalityId; mem: BotMemory }>();
     for (const b of this.manager.getBots(code)) bots.set(b.id, { personality: isPersonality(b.personality) ? b.personality : "balanced", mem: newMemory() });
-    const rt: Runtime = { state: created.state, forcedDice: [], away, afkTimer: null, auctionTimer: null, autoCounter: 0, bots, botTimer: null, botWatchdog: null, botTick: null, botRng: new Rng(seedToState(seed + "-bots")), startedAt: this.now() };
+    const rt: Runtime = { state: created.state, forcedDice: [], away, afkTimer: null, idleTimer: null, turnTimer: null, auctionTimer: null, autoCounter: 0, bots, botTimer: null, botWatchdog: null, botTick: null, botRng: new Rng(seedToState(seed + "-bots")), startedAt: this.now() };
     this.games.set(code, rt);
     if (bots.size > 0) {
       rt.botTick = setInterval(() => {
@@ -134,7 +137,8 @@ export class GameManager {
     }
     this.manager.markGameStarted(code);
     const snapshot = toSnapshot(created.state);
-    this.emitter.started(code, snapshot);
+    this.scheduleIdle(code, rt);
+    this.emitter.started(code, snapshot, rt.turnTimer);
     this.scheduleAfk(code);
     this.scheduleBots(code, rt, 0);
     return snapshot;
@@ -165,7 +169,8 @@ export class GameManager {
 
   private broadcast(code: string, rt: Runtime, events: GameEvent[]): void {
     const snapshot = toSnapshot(rt.state);
-    this.emitter.events(code, { events, snapshot, seq: snapshot.seq });
+    this.scheduleIdle(code, rt);
+    this.emitter.events(code, { events, snapshot, seq: snapshot.seq, turnTimer: rt.turnTimer });
     if (rt.state.phase === "gameOver" && rt.state.winnerPlayerId) {
       this.manager.markGameFinished(code, rt.state.winnerPlayerId);
       this.emitter.over(code, rt.state.winnerPlayerId);
@@ -373,6 +378,32 @@ export class GameManager {
     if (error) this.logger.error(`[game] could not remove ${playerId} for inactivity: ${error}`);
   }
 
+  /** Current idle timer (for a player who joins or reconnects mid-game). */
+  getTurnTimer(code: string): TurnTimer | null {
+    return this.games.get(code)?.turnTimer ?? null;
+  }
+
+  /**
+   * (Re)arms the idle timer: when a human has to act (roll, decide, pay), they get turnIdleKickMs; any action by anyone
+   * restarts it. Nothing by then removes them for inactivity (their assets return to the bank). Bots are never timed.
+   */
+  private scheduleIdle(code: string, rt: Runtime): void {
+    if (rt.idleTimer) clearTimeout(rt.idleTimer);
+    rt.idleTimer = null;
+    rt.turnTimer = null;
+    const current = rt.state.currentPlayerId;
+    if (rt.state.phase === "gameOver" || rt.state.phase === "auction" || !current || rt.bots.has(current)) return;
+    const me = rt.state.players.find((p) => p.id === current);
+    if (!me || me.bankrupt) return;
+    const now = this.now();
+    rt.turnTimer = { playerId: current, endsAt: now + this.timings.turnIdleKickMs, serverNow: now };
+    const seq = rt.state.seq;
+    rt.idleTimer = setTimeout(() => {
+      if (rt.state.seq === seq && rt.state.currentPlayerId === current) this.kickInactive(code, current);
+    }, this.timings.turnIdleKickMs);
+    rt.idleTimer.unref?.();
+  }
+
   private clearAfk(rt: Runtime): void {
     if (rt.afkTimer) clearTimeout(rt.afkTimer);
     rt.afkTimer = null;
@@ -381,6 +412,9 @@ export class GameManager {
   /** Every timer of a game (room closed, game over, shutdown). */
   private clearTimers(rt: Runtime): void {
     this.clearAfk(rt);
+    if (rt.idleTimer) clearTimeout(rt.idleTimer);
+    rt.idleTimer = null;
+    rt.turnTimer = null;
     if (rt.botTimer) clearTimeout(rt.botTimer);
     if (rt.botWatchdog) clearTimeout(rt.botWatchdog);
     rt.botTimer = null;

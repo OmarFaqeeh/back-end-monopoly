@@ -481,6 +481,14 @@ export class RoomManager {
       personality: bot.personality,
     };
     room.players.set(playerId, player);
+    // A bot is a player too: once one sits at the table the empty-room timer is cancelled for good.
+    if (!room.firstGuestJoined) {
+      room.firstGuestJoined = true;
+      room.expiresAt = null;
+      if (room.emptyTimer) clearTimeout(room.emptyTimer);
+      room.emptyTimer = null;
+      void this.persist("firstGuestJoined", () => this.repo.updateRoom(room.id, { firstGuestJoinedAt: new Date(this.now()) }));
+    }
     this.systemChat(room, "botJoined", { name: bot.nickname });
     this.events.state(this.snapshot(room));
     await this.persist("addBot", async () => {

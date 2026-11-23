@@ -358,3 +358,35 @@ describe("removal for inactivity over sockets", () => {
     for (const s of rest) expect(s.snapshots.at(-1)).toEqual(end);
   });
 });
+
+describe("idle turn timer", () => {
+  beforeEach(() => boot({ ...DEFAULT_TIMINGS, turnIdleKickMs: 400 }));
+
+  it("tells everyone who must act and by when; an action restarts it; doing nothing removes the player and frees their tiles", async () => {
+    const { code, seats } = await room(["Omar", "Sara", "Lina"]);
+    await emit(seats[0]!.socket, "game:start");
+    await until(() => seats.every((s) => s.snapshots.length > 0));
+    const first = game.getSnapshot(code)!.currentPlayerId!;
+    const timer = game.getTurnTimer(code)!;
+    expect(timer).toMatchObject({ playerId: first });
+    expect(timer.endsAt - timer.serverNow).toBe(400);
+
+    // the first player plays (roll + buy): the timer restarts for the same player's next step, nobody is removed
+    const cur = seats.find((s) => s.id === first)!;
+    game.setTestDice(code, [dice(3)]);
+    await emit(cur.socket, "game:roll", aid());
+    await emit(cur.socket, "game:buy", aid());
+    expect(game.getSnapshot(code)!.properties[3]).toMatchObject({ ownerId: first });
+    const second = game.getSnapshot(code)!.currentPlayerId!;
+    expect(second).not.toBe(first);
+    expect(game.getTurnTimer(code)).toMatchObject({ playerId: second });
+
+    // the second player does nothing: after 400 ms they are removed, and the turn moves on
+    await until(() => game.getSnapshot(code)!.players.find((p) => p.id === second)!.bankrupt, 3000);
+    const after = game.getSnapshot(code)!;
+    expect(after.players.find((p) => p.id === second)).toMatchObject({ bankrupt: true, cash: 0 });
+    expect(after.currentPlayerId).not.toBe(second);
+    const watcher = seats.find((s) => s.id === first)!;
+    await until(() => watcher.events.some((e) => e.type === "BANKRUPT" && e.playerId === second && e.reason === "afk"));
+  });
+});
