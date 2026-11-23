@@ -1,0 +1,12 @@
+# Pings the real-time server every 10 minutes so the free Render plan does not put it to sleep
+# (a sleeping server makes "Create private room" take about a minute).
+name: keepalive
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -fsS --max-time 60 https://back-end-monopoly-1.onrender.com/health
